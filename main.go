@@ -39,6 +39,9 @@ func main() {
 			slim = true
 		} else if arg == "--quiet" || arg == "-q" {
 			quiet = true
+		} else if arg == "-h" || arg == "--help" {
+			showHelp()
+			return
 		} else if strings.HasPrefix(arg, "-") {
 			// Handle other flags that might be added later
 			continue
@@ -98,6 +101,34 @@ func main() {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func showHelp() {
+	fmt.Println("natman-go - Modern NAT manager for Linux")
+	fmt.Println("")
+	fmt.Println("USAGE:")
+	fmt.Println("    natman [OPTIONS] [COMMAND]")
+	fmt.Println("")
+	fmt.Println("OPTIONS:")
+	fmt.Println("    -c, --c=PATH     Configuration file path (default: /etc/natman/config.yaml)")
+	fmt.Println("    -q, --quiet      Suppress non-essential output")
+	fmt.Println("    -h, --help       Show this help message")
+	fmt.Println("")
+	fmt.Println("COMMANDS:")
+	fmt.Println("    config-capture   Scan system and generate configuration file")
+	fmt.Println("                     Use --slim to generate minimal configuration")
+	fmt.Println("    status           Show current system status and configuration")
+	fmt.Println("    validate         Validate configuration file")
+	fmt.Println("    show-netmap      Display current NETMAP rules")
+	fmt.Println("    show-nat         Display current NAT rules")
+	fmt.Println("    capture-rules    Capture and display all current rules")
+	fmt.Println("")
+	fmt.Println("EXAMPLES:")
+	fmt.Println("    natman                                    # Apply configuration")
+	fmt.Println("    natman config-capture                    # Generate config from system")
+	fmt.Println("    natman config-capture --slim             # Generate minimal config")
+	fmt.Println("    natman -c /path/to/config.yaml validate  # Validate custom config")
+	fmt.Println("    natman status --quiet                    # Check status quietly")
 }
 
 func runConfigCapture(configPath string, slim bool) error {

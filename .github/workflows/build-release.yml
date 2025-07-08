@@ -90,7 +90,7 @@ jobs:
           chmod +x debian-package/DEBIAN/postinst
           
           # Copy control file and substitute version
-          sed "s/\${{ steps.version.outputs.version }}/${{ steps.version.outputs.version }}/g" pkg/deb/control > debian-package/DEBIAN/control
+          sed "s/VERSION_PLACEHOLDER/${{ steps.version.outputs.version }}/g" pkg/deb/control > debian-package/DEBIAN/control
           
           # Create conffiles
           cat > debian-package/DEBIAN/conffiles << EOF

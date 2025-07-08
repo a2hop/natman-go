@@ -1,5 +1,5 @@
 Package: natman-go
-Version: ${{ steps.version.outputs.version }}
+Version: VERSION_PLACEHOLDER
 Section: net
 Priority: optional
 Architecture: amd64

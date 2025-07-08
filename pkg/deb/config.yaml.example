@@ -1,5 +1,5 @@
 network:
-links:
+  links:
     # Example configuration
     # eth0:
     #   netmap6:
