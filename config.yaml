@@ -1,0 +1,46 @@
+
+network:
+  links:
+    pub1a: # interface name
+      netmap6: # use pub1a as public wan interface
+       c1: # we can have multiple sets of mappings
+        enabled: true #optional default is true
+        pfx-pub: "2001:db8:1::" # optional this is the public prefix
+        pfx-priv: "b30::20:" # optional this is the private prefix
+        maps: # we can specify partials and full mappings should be created
+        - pair: [::25:0:0/96, 20:0:0/96] # this is the mapping pair [public, private]
+        - pair: [::a15:0:0/96, 21:0:0/96]
+        - pair: [::25:0:0/96, 22:0:0/96]
+      nat66:
+        enabled: true #optional default is false
+        mss-clamping: true
+        mss: 1440
+        origins:  # this is optional for policy based routing
+        - "2001:db8:1::/48" 
+      nat44:
+        enabled: true
+        mss-clamping: true #optional default is false
+        mss: 1440 #optional default is 1440
+        origins:  # this is optional for policy based routing
+        - "10.24.0.0/16"
+      radv:
+        enabled: true #optional default is true but can be overrriden for testing configuration etc. 
+        min-adv-interval: 30 #optional default is 30 seconds
+        max-adv-interval: 60 #optional default is 60 seconds
+        default-lifetime: 180 #optional default is 180 seconds
+        dhcp: true #optional default is false
+        prefixes:
+        - prefix: "2001:db8:1::/48"
+          mode: "slaac" #optional default is "slaac"
+          on-link: true
+          autonomous: true
+          valid-lifetime: 1800 #optional default is 1800 seconds
+          preferred-lifetime: 900 #optional default is 900 seconds
+          router-addr: true
+        routes:
+        - prefix: "2001:db8:1::/48"
+          preference: medium #optional default is medium
+          metric: 100 #optional default is 100
+          lifetime: 3600 #optional default is 3600 seconds
+        include: # optional manual override files we need to include
+        - "/etc/radvd2.conf" #optional this is the radvd configuration file

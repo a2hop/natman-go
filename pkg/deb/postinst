@@ -1,0 +1,119 @@
+#!/bin/bash
+set -e
+
+# Package: natman-go
+# Post-installation script
+
+# Configuration paths
+CONFIG_DIR="/etc/natman"
+CONFIG_FILE="$CONFIG_DIR/config.yaml"
+CONFIG_EXAMPLE="$CONFIG_DIR/config.yaml.example"
+NETWORKD_DISPATCHER_SCRIPT="/etc/networkd-dispatcher/routable.d/natman.sh"
+
+# Logging function
+log() {
+    echo "natman-go: $1"
+}
+
+# Check if this is an upgrade and if service was running
+WAS_RUNNING=false
+if [ "$1" = "configure" ] && [ -n "$2" ]; then
+    # This is an upgrade ($2 contains the old version)
+    if systemctl is-active --quiet natman 2>/dev/null; then
+        WAS_RUNNING=true
+        log "Detected upgrade from version $2, service was running"
+    fi
+fi
+
+# Create configuration directory if it doesn't exist
+if [ ! -d "$CONFIG_DIR" ]; then
+    mkdir -p "$CONFIG_DIR"
+    log "Created configuration directory: $CONFIG_DIR"
+fi
+
+# Create default config if it doesn't exist
+if [ ! -f "$CONFIG_FILE" ]; then
+    log "Creating default configuration from example..."
+    cp "$CONFIG_EXAMPLE" "$CONFIG_FILE"
+    chmod 644 "$CONFIG_FILE"
+    log "Configuration created at $CONFIG_FILE"
+    log "Please edit this file to match your network setup."
+fi
+
+# Ensure networkd-dispatcher script is executable
+if [ -f "$NETWORKD_DISPATCHER_SCRIPT" ]; then
+    chmod +x "$NETWORKD_DISPATCHER_SCRIPT"
+    log "Networkd-dispatcher integration configured"
+fi
+
+# Check for required dependencies
+check_dependency() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        log "Warning: $1 not found. Please install the required package."
+        return 1
+    fi
+    return 0
+}
+
+# Check system requirements
+log "Checking system requirements..."
+check_dependency "iptables" || log "Install with: apt-get install iptables"
+check_dependency "ip6tables" || log "Install with: apt-get install iptables"
+check_dependency "ip" || log "Install with: apt-get install iproute2"
+
+# Check optional dependencies
+if ! check_dependency "radvd"; then
+    log "Optional: radvd not found. Install with: apt-get install radvd"
+    log "(Required for IPv6 Router Advertisement functionality)"
+fi
+
+# Check if NETMAP target is available
+if ip6tables -t nat -A OUTPUT -j NETMAP --to ::/0 2>/dev/null; then
+    ip6tables -t nat -D OUTPUT -j NETMAP --to ::/0 2>/dev/null || true
+    log "NETMAP target is available"
+else
+    log "Warning: NETMAP target not available in ip6tables"
+    log "IPv6 network mapping functionality will not work"
+fi
+
+# Reload systemd daemon
+systemctl daemon-reload
+
+# Enable service
+if systemctl enable natman 2>/dev/null; then
+    log "Natman service enabled"
+else
+    log "Warning: Failed to enable natman service"
+fi
+
+# Handle service start/restart based on installation context
+if [ "$WAS_RUNNING" = "true" ]; then
+    log "Restarting natman service..."
+    if systemctl restart natman; then
+        log "Service restarted successfully"
+    else
+        log "Warning: Failed to restart natman service"
+        log "Check configuration and start manually: systemctl start natman"
+    fi
+elif [ "$1" = "configure" ] && [ -z "$2" ]; then
+    # Fresh installation - don't start automatically
+    log "Installation completed successfully."
+    log ""
+    log "Next steps:"
+    log "  1. Edit $CONFIG_FILE to match your network setup"
+    log "  2. Generate config from current system: natman config-capture"
+    log "  3. Validate configuration: natman validate"
+    log "  4. Start the service: systemctl start natman"
+    log ""
+    log "Useful commands:"
+    log "  - View status: systemctl status natman"
+    log "  - View logs: journalctl -u natman -f"
+    log "  - Test config: natman validate"
+    log "  - Show current rules: natman show-nat && natman show-netmap"
+fi
+
+# Set proper permissions
+chown root:root "$CONFIG_FILE" 2>/dev/null || true
+chmod 644 "$CONFIG_FILE" 2>/dev/null || true
+
+log "Post-installation completed"

@@ -1,0 +1,41 @@
+[Unit]
+Description=Natman Network Manager
+Documentation=https://github.com/a2hop/natman-go
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/natman --quiet
+RemainAfterExit=yes
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=natman
+
+# Security settings
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/etc/natman /etc/radvd.conf /var/lib/radvd
+ProtectKernelTunables=false
+ProtectKernelModules=false
+ProtectControlGroups=false
+RestrictRealtime=true
+RestrictSUIDSGID=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+# Network capabilities required for iptables/ip6tables
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

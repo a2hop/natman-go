@@ -1,0 +1,29 @@
+network:
+links:
+    # Example configuration
+    # eth0:
+    #   netmap6:
+    #     set1:
+    #       enabled: false
+    #       pfx-pub: "2001:db8:1::"
+    #       pfx-priv: "fd00:1::"
+    #       maps:
+    #         - pair: ["2001:db8:1::100", "fd00:1::100"]
+    #   nat66:
+    #     enabled: false
+    #     mss-clamping: false
+    #     mss: 1440
+    #     origins: []
+    #   nat44:
+    #     enabled: false
+    #     mss-clamping: false
+    #     mss: 1440
+    #     origins: []
+    #   radv:
+    #     enabled: false
+    #     min-adv-interval: 30
+    #     max-adv-interval: 60
+    #     default-lifetime: 180
+    #     dhcp: false
+    #     prefixes: []
+    #     routes: []

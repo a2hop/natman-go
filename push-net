@@ -1,0 +1,6 @@
+#!/bin/bash
+
+go build
+
+rsync -av natman express@netcat.gtn.one:/host/get/n/natman/natman
+
