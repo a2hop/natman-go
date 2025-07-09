@@ -236,54 +236,6 @@ radv:
 
 Route preference can be: `"high"`, `"medium"`, or `"low"`
 
-## System Integration
-
-### Systemd Service
-
-Create `/etc/systemd/system/natman.service`:
-
-```ini
-[Unit]
-Description=Natman Network Manager
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/natman --quiet
-RemainAfterExit=yes
-User=root
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
-sudo systemctl enable natman
-sudo systemctl start natman
-```
-
-### Network Interface Integration
-
-For automatic configuration on interface changes, create `/etc/systemd/system/natman@.service`:
-
-```ini
-[Unit]
-Description=Natman for interface %i
-After=network.target
-BindsTo=sys-subsystem-net-devices-%i.device
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/natman --quiet
-RemainAfterExit=yes
-User=root
-
-[Install]
-WantedBy=sys-subsystem-net-devices-%i.device
-```
-
 ## Troubleshooting
 
 ### Check System Status
