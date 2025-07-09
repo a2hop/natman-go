@@ -17,7 +17,7 @@ Modern NAT manager for Linux written in Go. Natman-go provides automated configu
 
 ```bash
 # Download and install
-wget https://github.com/a2hop/natman-go/releases/latest/download/natman-go_1.0.0_amd64.deb
+wget https://github.com/a2hop/natman-go/releases/latest/download/natman-go_$VERSION_amd64.deb
 sudo dpkg -i natman-go_*.deb
 sudo apt-get install -f  # Fix any dependency issues
 
@@ -136,8 +136,8 @@ network:
           pfx-pub: "2001:db8:1::"
           pfx-priv: "fd00:1::"
           maps:
-            - pair: ["100", "100"]
-            - pair: ["101", "101", "high", 7200]
+            - pair: ["2001:db8:1::100", "fd00:1::100"]
+            - pair: ["2001:db8:1::101", "fd00:1::101", "high", 7200]
       
       nat66:
         enabled: true
@@ -181,13 +181,13 @@ netmap6:
     pfx-pub: "2001:db8:1::"     # Public prefix (optional)
     pfx-priv: "fd00:1::"        # Private prefix (optional)
     maps:
-      - pair: ["public_addr", "private_addr"]
-      - pair: ["public_addr", "private_addr", "preference", lifetime]
+      - pair: ["2001:db8:1::100", "fd00:1::100"]
+      - pair: ["2001:db8:1::101", "fd00:1::101", "high", 7200]
 ```
 
 The `pair` array supports two formats:
-- `[public, private]`: Basic mapping
-- `[public, private, preference, lifetime]`: With router advertisement settings
+- `[public_ipv6, private_ipv6]`: Basic 1:1 IPv6 address mapping
+- `[public_ipv6, private_ipv6, preference, lifetime]`: With router advertisement settings
 
 #### NAT Configuration
 
