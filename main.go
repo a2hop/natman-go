@@ -598,32 +598,31 @@ func runShowRadvd() error {
 				route = strings.TrimSuffix(parts[1], "{")
 			}
 
-			// Look ahead for route configuration
+			// Look ahead for route configuration within this specific route block
 			j := i + 1
 			braceCount := 1
 			var routeLifetime, routePreference string
 
 			for j < len(lines) && braceCount > 0 {
 				innerLine := strings.TrimSpace(lines[j])
+
 				if strings.Contains(innerLine, "{") {
 					braceCount++
 				}
 				if strings.Contains(innerLine, "}") {
 					braceCount--
-					if braceCount == 0 {
-						break
-					}
 				}
 
-				// Only process configuration lines within this route block
-				if braceCount == 1 {
-					if strings.Contains(innerLine, "AdvRouteLifetime") {
+				// Only process configuration lines that are directly in this route block (braceCount == 1)
+				// and are not route definitions themselves
+				if braceCount == 1 && !strings.Contains(innerLine, "route") && innerLine != "}" {
+					if strings.HasPrefix(innerLine, "AdvRouteLifetime") {
 						parts := strings.Fields(innerLine)
 						if len(parts) >= 2 {
 							routeLifetime = strings.TrimSuffix(parts[1], ";")
 						}
 					}
-					if strings.Contains(innerLine, "AdvRoutePreference") {
+					if strings.HasPrefix(innerLine, "AdvRoutePreference") {
 						parts := strings.Fields(innerLine)
 						if len(parts) >= 2 {
 							routePreference = strings.TrimSuffix(parts[1], ";")
@@ -635,10 +634,10 @@ func runShowRadvd() error {
 
 			// Display route as one-liner similar to ip route
 			routeLine := fmt.Sprintf("   ├─ Route: %s dev %s", route, currentInterface)
-			if routePreference != "" {
+			if routePreference != "" && routePreference != route {
 				routeLine += fmt.Sprintf(" pref %s", routePreference)
 			}
-			if routeLifetime != "" {
+			if routeLifetime != "" && routeLifetime != route {
 				routeLine += fmt.Sprintf(" lifetime %ss", routeLifetime)
 			}
 			fmt.Println(routeLine)
