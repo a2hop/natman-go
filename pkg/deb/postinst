@@ -21,13 +21,19 @@ if [ ! -d "$CONFIG_DIR" ]; then
     log "Created configuration directory: $CONFIG_DIR"
 fi
 
-# Create default config if it doesn't exist
+# Never overwrite existing config, only create if it doesn't exist
 if [ ! -f "$CONFIG_FILE" ]; then
-    log "Creating default configuration from example..."
-    cp "$CONFIG_EXAMPLE" "$CONFIG_FILE"
-    chmod 644 "$CONFIG_FILE"
-    log "Configuration created at $CONFIG_FILE"
-    log "Please edit this file to match your network setup."
+    if [ -f "$CONFIG_EXAMPLE" ]; then
+        log "Creating initial configuration from example..."
+        cp "$CONFIG_EXAMPLE" "$CONFIG_FILE"
+        chmod 644 "$CONFIG_FILE"
+        log "Configuration created at $CONFIG_FILE"
+        log "Please edit this file to match your network setup."
+    else
+        log "Warning: Example configuration not found at $CONFIG_EXAMPLE"
+    fi
+else
+    log "Existing configuration preserved at $CONFIG_FILE"
 fi
 
 # Ensure networkd-dispatcher script is executable
@@ -80,7 +86,9 @@ log "  - Show current rules: natman show-nat && natman show-netmap"
 log "  - View help: natman --help"
 
 # Set proper permissions
-chown root:root "$CONFIG_FILE" 2>/dev/null || true
-chmod 644 "$CONFIG_FILE" 2>/dev/null || true
+if [ -f "$CONFIG_FILE" ]; then
+    chown root:root "$CONFIG_FILE" 2>/dev/null || true
+    chmod 644 "$CONFIG_FILE" 2>/dev/null || true
+fi
 
 log "Post-installation completed"

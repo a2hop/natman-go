@@ -3,7 +3,7 @@ Version: VERSION_PLACEHOLDER
 Section: net
 Priority: optional
 Architecture: amd64
-Maintainer: natman-go a2hop 
+Maintainer: natman-go a2hop <noreply@github.com>
 Description: Modern NAT manager for Linux written in Go
   natman-go provides automated configuration and management of IPv4/IPv6 NAT,
   network mapping (NETMAP), and router advertisement (RADV) services.
@@ -11,5 +11,6 @@ Description: Modern NAT manager for Linux written in Go
   Features include IPv6 Network Mapping (NETMAP) for 1:1 IPv6 address translation,
   NAT44/NAT66 with MSS clamping support, Router Advertisement (RADV) management,
   system discovery and configuration validation.
-Depends: systemd, iptables, iproute2, radvd
+Depends: systemd, iptables, iproute2
+Recommends: radvd
 Homepage: https://github.com/a2hop/natman-go

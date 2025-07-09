@@ -95,7 +95,10 @@ jobs:
           cp pkg/deb/postrm debian-package/DEBIAN/
           chmod +x debian-package/DEBIAN/postrm
           
-          cp pkg/deb/conffiles debian-package/DEBIAN/
+          # Only copy conffiles if it exists and has content
+          if [ -s pkg/deb/conffiles ]; then
+            cp pkg/deb/conffiles debian-package/DEBIAN/
+          fi
           
           # Copy control file and substitute version
           sed "s/VERSION_PLACEHOLDER/${{ steps.version.outputs.version }}/g" pkg/deb/control > debian-package/DEBIAN/control

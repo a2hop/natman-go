@@ -13,12 +13,23 @@ Modern NAT manager for Linux written in Go. Natman-go provides automated configu
 
 ## Installation
 
-### Prerequisites
+### From Debian Package
 
-- Linux system with iptables/ip6tables support
-- NETMAP target support in kernel/iptables (for IPv6 network mapping)
-- radvd package (for router advertisement functionality)
-- Root privileges for network configuration
+```bash
+# Download and install
+wget https://github.com/a2hop/natman-go/releases/latest/download/natman-go_1.0.0_amd64.deb
+sudo dpkg -i natman-go_*.deb
+sudo apt-get install -f  # Fix any dependency issues
+
+# Create initial configuration from example
+sudo cp /etc/natman/config.yaml.example /etc/natman/config.yaml
+sudo nano /etc/natman/config.yaml
+
+# Enable and start service
+sudo systemctl enable --now natman
+```
+
+**Note**: The example configuration file (`config.yaml.example`) will be updated during package upgrades, but your actual configuration file (`config.yaml`) will never be automatically modified.
 
 ### Build from Source
 

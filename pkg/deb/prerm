@@ -1,9 +1,14 @@
 #!/bin/bash
 set -e
 
-# Only stop service on removal, not on upgrade
-if [ "$1" = "remove" ]; then
-    echo "Stopping natman service..."
-    systemctl stop natman || true
-    systemctl disable natman || true
-fi
+case "$1" in
+    remove)
+        echo "natman-go: Stopping and disabling service..."
+        systemctl stop natman 2>/dev/null || true
+        systemctl disable natman 2>/dev/null || true
+        ;;
+    upgrade)
+        echo "natman-go: Stopping service for upgrade..."
+        systemctl stop natman 2>/dev/null || true
+        ;;
+esac
