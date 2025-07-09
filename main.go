@@ -124,6 +124,14 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "":
+		// No command provided, proceed with normal flow
+		break
+	default:
+		// Unknown command
+		fmt.Printf("Error: Unknown command '%s'\n", command)
+		fmt.Println("Use 'natman --help' to see available commands.")
+		os.Exit(1)
 	}
 
 	// Normal flow: parse config and apply configuration
