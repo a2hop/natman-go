@@ -623,20 +623,28 @@ func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConf
 		if nat66Enabled || !slim {
 			config += `      nat66:
         enabled: ` + boolToString(nat66Enabled) + `
-        mss-clamping: false
+`
+			// Only add mss-clamping and origins if not slim or if they have non-default values
+			if !slim {
+				config += `        mss-clamping: false
         mss: 1440
         origins: []
 `
+			}
 		}
 
 		// Generate nat44 section - only if enabled or not slim
 		if nat44Enabled || !slim {
 			config += `      nat44:
         enabled: ` + boolToString(nat44Enabled) + `
-        mss-clamping: false
+`
+			// Only add mss-clamping and origins if not slim or if they have non-default values
+			if !slim {
+				config += `        mss-clamping: false
         mss: 1440
         origins: []
 `
+			}
 		}
 
 		// Generate radv section
@@ -671,7 +679,7 @@ func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConf
 				config += `        rdnss:
 `
 				for _, server := range radvdIface.RdnssServers {
-					config += `        - server: "` + server.Address + `"
+					config += `        - server: ["` + server.Address + `"]
           lifetime: ` + strconv.Itoa(server.Lifetime) + `
 `
 				}
@@ -1191,30 +1199,49 @@ func parseRdnssBlocks(content string) []RadvdRdnss {
 
 		// Look for RDNSS declarations
 		if strings.HasPrefix(line, "RDNSS ") {
-			// Extract the server address
+			// Extract all server addresses from the same line
 			parts := strings.Fields(line)
 			if len(parts) < 2 {
 				continue
 			}
 
-			serverAddr := parts[1]
+			// RDNSS can have multiple addresses on the same line
+			// Example: RDNSS 2001:4860:4860::8844 2001:4860:4860::8888 { ... }
+			var addresses []string
+			for j := 1; j < len(parts); j++ {
+				part := parts[j]
+				// Stop when we hit opening brace or semicolon
+				if strings.Contains(part, "{") || strings.Contains(part, ";") {
+					break
+				}
+				// Basic IPv6 address validation - contains colons
+				if strings.Contains(part, ":") {
+					addresses = append(addresses, part)
+				}
+			}
+
+			if len(addresses) == 0 {
+				continue
+			}
 
 			// Check if this is a single-line RDNSS declaration
 			if strings.Contains(line, "{") && strings.Contains(line, "}") {
 				// Parse inline RDNSS options
-				rdnss := RadvdRdnss{
-					Address:  serverAddr,
-					Lifetime: 3600, // Default
-				}
-
-				// Extract options from the same line
-				if strings.Contains(line, "AdvRDNSSLifetime") {
-					if val := extractNumberFromLine(line, "AdvRDNSSLifetime"); val >= 0 {
-						rdnss.Lifetime = val
+				for _, addr := range addresses {
+					rdnss := RadvdRdnss{
+						Address:  addr,
+						Lifetime: 3600, // Default
 					}
-				}
 
-				results = append(results, rdnss)
+					// Extract options from the same line
+					if strings.Contains(line, "AdvRDNSSLifetime") {
+						if val := extractNumberFromLine(line, "AdvRDNSSLifetime"); val >= 0 {
+							rdnss.Lifetime = val
+						}
+					}
+
+					results = append(results, rdnss)
+				}
 				continue
 			}
 
@@ -1249,23 +1276,26 @@ func parseRdnssBlocks(content string) []RadvdRdnss {
 				}
 			}
 
-			// Parse the RDNSS block
-			rdnss := RadvdRdnss{
-				Address:  serverAddr,
-				Lifetime: 3600, // Default
-			}
-
+			// Parse the RDNSS block for each address
+			defaultLifetime := 3600 // Default
 			blockLines := strings.Split(blockContent.String(), "\n")
 			for _, blockLine := range blockLines {
 				blockLine = strings.TrimSpace(blockLine)
 				if strings.Contains(blockLine, "AdvRDNSSLifetime") {
 					if val := extractNumber(blockLine); val >= 0 {
-						rdnss.Lifetime = val
+						defaultLifetime = val
 					}
 				}
 			}
 
-			results = append(results, rdnss)
+			// Create RDNSS entries for each address
+			for _, addr := range addresses {
+				rdnss := RadvdRdnss{
+					Address:  addr,
+					Lifetime: defaultLifetime,
+				}
+				results = append(results, rdnss)
+			}
 		}
 	}
 
