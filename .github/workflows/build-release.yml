@@ -85,48 +85,20 @@ jobs:
           # Copy documentation
           cp README.md debian-package/usr/share/doc/natman-go/
           
-          # Copy postinst script
+          # Copy packaging files from pkg/deb
           cp pkg/deb/postinst debian-package/DEBIAN/
           chmod +x debian-package/DEBIAN/postinst
           
-          # Copy control file and substitute version
-          sed "s/VERSION_PLACEHOLDER/${{ steps.version.outputs.version }}/g" pkg/deb/control > debian-package/DEBIAN/control
-          
-          # Create conffiles
-          cat > debian-package/DEBIAN/conffiles << EOF
-          /etc/natman/config.yaml.example
-          /etc/networkd-dispatcher/routable.d/natman.sh
-          EOF
-          
-          # Create prerm script
-          cat > debian-package/DEBIAN/prerm << 'EOF'
-          #!/bin/bash
-          set -e
-          
-          # Only stop service on removal, not on upgrade
-          if [ "$1" = "remove" ]; then
-              echo "Stopping natman service..."
-              systemctl stop natman || true
-              systemctl disable natman || true
-          fi
-          EOF
+          cp pkg/deb/prerm debian-package/DEBIAN/
           chmod +x debian-package/DEBIAN/prerm
           
-          # Create postrm script
-          cat > debian-package/DEBIAN/postrm << 'EOF'
-          #!/bin/bash
-          set -e
-          
-          if [ "$1" = "purge" ]; then
-              # Remove configuration files on purge
-              rm -rf /etc/natman
-              echo "Configuration files removed."
-          fi
-          
-          # Reload systemd daemon
-          systemctl daemon-reload || true
-          EOF
+          cp pkg/deb/postrm debian-package/DEBIAN/
           chmod +x debian-package/DEBIAN/postrm
+          
+          cp pkg/deb/conffiles debian-package/DEBIAN/
+          
+          # Copy control file and substitute version
+          sed "s/VERSION_PLACEHOLDER/${{ steps.version.outputs.version }}/g" pkg/deb/control > debian-package/DEBIAN/control
 
       - name: Build Debian package
         run: |
