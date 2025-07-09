@@ -118,6 +118,12 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "show-radvd":
+		if err := runShowRadvd(); err != nil {
+			fmt.Printf("Error showing radvd settings: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Normal flow: parse config and apply configuration
@@ -146,6 +152,7 @@ func showHelp() {
 	fmt.Println("    validate         Validate configuration file")
 	fmt.Println("    show-netmap      Display current NETMAP rules")
 	fmt.Println("    show-nat         Display current NAT rules")
+	fmt.Println("    show-radvd       Display current radvd settings and routes")
 	fmt.Println("    capture-rules    Capture and display all current rules")
 	fmt.Println("")
 	fmt.Println("EXAMPLES:")
@@ -402,6 +409,66 @@ func runCaptureRules() error {
 			fmt.Printf("    Interface %s: %d rules\n", iface, len(rules))
 			for _, rule := range rules {
 				fmt.Printf("      %s\n", rule)
+			}
+		}
+	}
+
+	return nil
+}
+
+func runShowRadvd() error {
+	fmt.Println("Showing current radvd settings with focus on routes...")
+
+	// Check if radvd service is running
+	active, err := radvdmanager.GetRadvdStatus()
+	if err != nil {
+		return fmt.Errorf("failed to check radvd status: %v", err)
+	}
+
+	fmt.Printf("Radvd Service Status: ")
+	if active {
+		fmt.Println("Active")
+	} else {
+		fmt.Println("Inactive")
+	}
+
+	// Read and display radvd configuration file
+	configPath := "/etc/radvd.conf"
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		fmt.Printf("Radvd config file not found: %s\n", configPath)
+		return nil
+	}
+
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read radvd config: %v", err)
+	}
+
+	fmt.Printf("\nRadvd Configuration (%s):\n", configPath)
+	fmt.Println("=" + strings.Repeat("=", len(configPath)+23))
+
+	// Parse and highlight route-related sections
+	lines := strings.Split(string(content), "\n")
+	inInterface := false
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if strings.Contains(line, "interface") {
+			inInterface = true
+			fmt.Printf("\n%s\n", line)
+		} else if strings.Contains(line, "}") && inInterface {
+			inInterface = false
+			fmt.Printf("%s\n", line)
+		} else if inInterface {
+			// Highlight route-related directives
+			if strings.Contains(line, "route") || strings.Contains(line, "prefix") ||
+				strings.Contains(line, "AdvRoutePreference") || strings.Contains(line, "AdvRouteLifetime") {
+				fmt.Printf("  >>> %s\n", line)
+			} else {
+				fmt.Printf("      %s\n", line)
 			}
 		}
 	}
