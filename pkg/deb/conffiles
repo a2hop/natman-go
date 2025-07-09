@@ -1,1 +1,2 @@
 /etc/natman/config.yaml.example
+/etc/networkd-dispatcher/routable.d/natman.sh
