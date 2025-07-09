@@ -34,7 +34,7 @@ INTERFACE="${IFACE:-unknown}"
 log "Interface $INTERFACE became routable, triggering natman configuration"
 
 # Apply natman configuration with error handling
-if "$NATMAN_BINARY" --quiet --config "$NATMAN_CONFIG" 2>&1 | logger -t "$LOG_TAG"; then
+if "$NATMAN_BINARY" --quiet --c="$NATMAN_CONFIG" 2>&1 | logger -t "$LOG_TAG"; then
     log "natman configuration applied successfully for interface $INTERFACE"
 else
     log "Failed to apply natman configuration for interface $INTERFACE"
