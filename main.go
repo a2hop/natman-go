@@ -597,7 +597,6 @@ func runShowRadvd() error {
 			if len(parts) >= 2 {
 				route = strings.TrimSuffix(parts[1], "{")
 			}
-			fmt.Printf("   ├─ 🛣️  Route: %s\n", route)
 
 			// Look ahead for route configuration
 			j := i + 1
@@ -628,12 +627,15 @@ func runShowRadvd() error {
 				j++
 			}
 
-			if routeLifetime != "" {
-				fmt.Printf("   │  ├─ Route Lifetime: %s\n", routeLifetime)
-			}
+			// Display route as one-liner similar to ip route
+			routeLine := fmt.Sprintf("   ├─ 🛣️  %s dev %s", route, currentInterface)
 			if routePreference != "" {
-				fmt.Printf("   │  └─ Route Preference: %s\n", routePreference)
+				routeLine += fmt.Sprintf(" pref %s", routePreference)
 			}
+			if routeLifetime != "" {
+				routeLine += fmt.Sprintf(" lifetime %ss", routeLifetime)
+			}
+			fmt.Println(routeLine)
 		}
 	}
 
