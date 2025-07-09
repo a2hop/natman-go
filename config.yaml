@@ -11,6 +11,7 @@ network:
         - pair: [::25:0:0/96, 20:0:0/96] # this is the mapping pair [public, private]
         - pair: [::a15:0:0/96, 21:0:0/96]
         - pair: [::25:0:0/96, 22:0:0/96]
+          radv: [high, 100, 3600]  
       nat66:
         enabled: true #optional default is false
         mss-clamping: true

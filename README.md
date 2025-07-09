@@ -76,7 +76,9 @@ natman [options] [command]
 
 - `-c, --c=PATH`: Configuration file path (default: `/etc/natman/config.yaml`)
 - `--quiet, -q`: Suppress non-essential output
+- `--debug, -d`: Enable debug output
 - `--slim`: Generate minimal configuration (config-capture only)
+- `-h, --help`: Show help message
 
 #### Commands
 
@@ -102,6 +104,9 @@ sudo natman status --quiet
 
 # Show current NAT rules
 sudo natman show-nat
+
+# Enable debug mode
+sudo natman --debug
 ```
 
 ## Configuration
@@ -120,8 +125,8 @@ network:
           pfx-pub: "2001:db8:1::"
           pfx-priv: "fd00:1::"
           maps:
-            - pair: ["2001:db8:1::100", "fd00:1::100"]
-            - pair: ["2001:db8:1::101", "fd00:1::101"]
+            - pair: ["100", "100"]
+            - pair: ["101", "101", "high", 7200]
       
       nat66:
         enabled: true
@@ -139,23 +144,17 @@ network:
       
       radv:
         enabled: true
-        min-adv-interval: 30
-        max-adv-interval: 60
-        default-lifetime: 180
+        adv-interval: [30, 60]
+        lifetime: 180
         dhcp: false
         prefixes:
           - prefix: "2001:db8:1::/64"
-            mode: "slaac"
             on-link: true
-            autonomous: true
-            valid-lifetime: 1800
-            preferred-lifetime: 900
-            router-addr: false
+            auto: true
+            adv-addr: false
+            lifetime: [1800, 900]
         routes:
-          - prefix: "::/0"
-            preference: "medium"
-            metric: 100
-            lifetime: 3600
+          - route: ["::/0", "medium", 3600]
 ```
 
 ### Configuration Sections
@@ -172,7 +171,12 @@ netmap6:
     pfx-priv: "fd00:1::"        # Private prefix (optional)
     maps:
       - pair: ["public_addr", "private_addr"]
+      - pair: ["public_addr", "private_addr", "preference", lifetime]
 ```
+
+The `pair` array supports two formats:
+- `[public, private]`: Basic mapping
+- `[public, private, preference, lifetime]`: With router advertisement settings
 
 #### NAT Configuration
 
@@ -201,29 +205,25 @@ Configures radvd for IPv6 router advertisements:
 ```yaml
 radv:
   enabled: true
-  min-adv-interval: 30        # Minimum advertisement interval (seconds)
-  max-adv-interval: 60        # Maximum advertisement interval (seconds)
-  default-lifetime: 180       # Default route lifetime (seconds)
+  adv-interval: [30, 60]      # [min, max] advertisement interval (seconds)
+  lifetime: 180               # Default route lifetime (seconds)
   dhcp: false                 # Enable managed/other config flags
   
   prefixes:
     - prefix: "2001:db8:1::/64"
-      mode: "slaac"
       on-link: true
-      autonomous: true
-      valid-lifetime: 1800
-      preferred-lifetime: 900
-      router-addr: false
+      auto: true              # Autonomous configuration
+      adv-addr: false         # Advertise router address
+      lifetime: [1800, 900]   # [valid, preferred] lifetime
   
   routes:
-    - prefix: "::/0"
-      preference: "medium"      # high, medium, low
-      metric: 100
-      lifetime: 3600
+    - route: ["::/0", "medium", 3600]  # [prefix, preference, lifetime]
   
   include:                    # Include external config files
     - "/etc/radvd.conf.d/custom.conf"
 ```
+
+Route preference can be: `"high"`, `"medium"`, or `"low"`
 
 ## System Integration
 
@@ -300,6 +300,14 @@ sudo natman show-netmap
 sudo natman capture-rules
 ```
 
+### Debug Mode
+
+Enable debug output for detailed troubleshooting:
+
+```bash
+sudo natman --debug
+```
+
 ### Common Issues
 
 #### NETMAP Target Not Available
@@ -328,6 +336,18 @@ sudo systemctl status radvd
 
 # View radvd logs
 sudo journalctl -u radvd
+```
+
+#### Configuration Issues
+
+Use debug mode to see detailed processing:
+
+```bash
+# Debug configuration parsing and rule generation
+sudo natman --debug
+
+# Validate configuration syntax
+sudo natman validate
 ```
 
 #### Permission Issues

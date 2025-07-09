@@ -65,9 +65,56 @@ func NewLink(name string, cfg config.LinkConfig) *Link {
 	// Initialize RADV if configured
 	if cfg.Radv != nil {
 		link.Radv = radv.NewRadvConfig(*cfg.Radv)
+
+		// Auto-generate routes from netmap6 configurations
+		link.generateAutoRoutes()
 	}
 
 	return link
+}
+
+// generateAutoRoutes creates radv routes from netmap6 configurations
+func (l *Link) generateAutoRoutes() {
+	if l.Radv == nil {
+		return
+	}
+
+	var autoRoutes []radv.RouteConfig
+
+	// Collect routes from all netmap6 sets
+	for _, netmap := range l.Netmap6 {
+		if !netmap.Enabled {
+			continue
+		}
+
+		radvRoutes := netmap.GetRadvRoutes()
+		for _, route := range radvRoutes {
+			autoRoute := radv.RouteConfig{
+				Prefix:     route.Prefix,
+				Preference: route.Preference,
+				Metric:     route.Metric,
+				Lifetime:   route.Lifetime,
+			}
+			autoRoutes = append(autoRoutes, autoRoute)
+		}
+	}
+
+	// Check for duplicates with manual routes to avoid conflicts
+	var filteredAutoRoutes []radv.RouteConfig
+	for _, autoRoute := range autoRoutes {
+		isDuplicate := false
+		for _, manualRoute := range l.Radv.Routes {
+			if autoRoute.Prefix == manualRoute.Prefix {
+				isDuplicate = true
+				break
+			}
+		}
+		if !isDuplicate {
+			filteredAutoRoutes = append(filteredAutoRoutes, autoRoute)
+		}
+	}
+
+	l.Radv.AutoRoutes = filteredAutoRoutes
 }
 
 func BuildLinks(cfg *config.Config) map[string]*Link {

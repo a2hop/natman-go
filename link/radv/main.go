@@ -17,6 +17,7 @@ type RadvConfig struct {
 	Dhcp            bool
 	Prefixes        []PrefixConfig
 	Routes          []RouteConfig
+	AutoRoutes      []RouteConfig // Auto-generated from netmap6
 	Include         []string
 }
 
@@ -43,72 +44,85 @@ type Config struct {
 
 func NewRadvConfig(cfg config.RadvConfig) *RadvConfig {
 	radv := &RadvConfig{
-		Enabled:         cfg.Enabled,
-		MinAdvInterval:  cfg.MinAdvInterval,
-		MaxAdvInterval:  cfg.MaxAdvInterval,
-		DefaultLifetime: cfg.DefaultLifetime,
-		Dhcp:            cfg.Dhcp,
-		Include:         cfg.Include,
+		Enabled: cfg.Enabled,
+		Dhcp:    cfg.Dhcp,
+		Include: cfg.Include,
 	}
 
-	// Set defaults
-	if radv.MinAdvInterval == 0 {
+	// Parse adv-interval [min, max]
+	if len(cfg.AdvInterval) >= 2 {
+		radv.MinAdvInterval = cfg.AdvInterval[0]
+		radv.MaxAdvInterval = cfg.AdvInterval[1]
+	} else {
+		// Set defaults
 		radv.MinAdvInterval = 30
-	}
-	if radv.MaxAdvInterval == 0 {
 		radv.MaxAdvInterval = 60
 	}
-	if radv.DefaultLifetime == 0 {
+
+	// Set lifetime (renamed from default-lifetime)
+	if cfg.Lifetime > 0 {
+		radv.DefaultLifetime = cfg.Lifetime
+	} else {
 		radv.DefaultLifetime = 180
 	}
 
-	// Convert prefixes
+	// Convert prefixes with new compact format
 	for _, prefix := range cfg.Prefixes {
 		pc := PrefixConfig{
-			Prefix:            prefix.Prefix,
-			Mode:              prefix.Mode,
-			OnLink:            prefix.OnLink,
-			Autonomous:        prefix.Autonomous,
-			ValidLifetime:     prefix.ValidLifetime,
-			PreferredLifetime: prefix.PreferredLifetime,
-			RouterAddr:        prefix.RouterAddr,
+			Prefix:     prefix.Prefix,
+			OnLink:     prefix.OnLink,
+			Autonomous: prefix.Auto,    // auto -> autonomous
+			RouterAddr: prefix.AdvAddr, // adv-addr -> router-addr
 		}
 
-		// Set defaults
-		if pc.Mode == "" {
-			pc.Mode = "slaac"
-		}
-		if pc.ValidLifetime == 0 {
+		// Parse lifetime [valid, preferred]
+		if len(prefix.Lifetime) >= 2 {
+			pc.ValidLifetime = prefix.Lifetime[0]
+			pc.PreferredLifetime = prefix.Lifetime[1]
+		} else {
+			// Set defaults
 			pc.ValidLifetime = 1800
-		}
-		if pc.PreferredLifetime == 0 {
 			pc.PreferredLifetime = 900
 		}
 
 		radv.Prefixes = append(radv.Prefixes, pc)
 	}
 
-	// Convert routes
-	for _, route := range cfg.Routes {
-		rc := RouteConfig{
-			Prefix:     route.Prefix,
-			Preference: route.Preference,
-			Metric:     route.Metric,
-			Lifetime:   route.Lifetime,
-		}
+	// Convert routes from array format
+	for _, routeArray := range cfg.Routes {
+		if len(routeArray.Route) >= 2 {
+			prefix := ""
+			preference := "medium" // default
+			lifetime := 3600       // default
 
-		// Set defaults
-		if rc.Preference == "" {
-			rc.Preference = "medium"
-		}
-		if rc.Metric == 0 {
-			rc.Metric = 100
-		}
-		if rc.Lifetime == 0 {
-			rc.Lifetime = 3600
-		}
+			// Parse prefix (string at index 0)
+			if p, ok := routeArray.Route[0].(string); ok {
+				prefix = p
+			}
 
-		radv.Routes = append(radv.Routes, rc)
+			// Parse preference (string at index 1)
+			if pref, ok := routeArray.Route[1].(string); ok {
+				preference = pref
+			}
+
+			// Parse lifetime (optional int at index 2)
+			if len(routeArray.Route) >= 3 {
+				if l, ok := routeArray.Route[2].(int); ok {
+					lifetime = l
+				} else if l, ok := routeArray.Route[2].(float64); ok {
+					lifetime = int(l)
+				}
+			}
+
+			if prefix != "" {
+				rc := RouteConfig{
+					Prefix:     prefix,
+					Preference: preference,
+					Lifetime:   lifetime,
+				}
+				radv.Routes = append(radv.Routes, rc)
+			}
+		}
 	}
 
 	return radv
@@ -122,7 +136,7 @@ func (r *RadvConfig) GenerateConfig(interfaceName string) string {
 	var config strings.Builder
 
 	config.WriteString(fmt.Sprintf("interface %s {\n", interfaceName))
-	config.WriteString(fmt.Sprintf("    AdvSendAdvert on;\n"))
+	config.WriteString("    AdvSendAdvert on;\n")
 	config.WriteString(fmt.Sprintf("    MinRtrAdvInterval %d;\n", r.MinAdvInterval))
 	config.WriteString(fmt.Sprintf("    MaxRtrAdvInterval %d;\n", r.MaxAdvInterval))
 	config.WriteString(fmt.Sprintf("    AdvDefaultLifetime %d;\n", r.DefaultLifetime))
@@ -137,20 +151,32 @@ func (r *RadvConfig) GenerateConfig(interfaceName string) string {
 		config.WriteString(fmt.Sprintf("    prefix %s {\n", prefix.Prefix))
 		config.WriteString(fmt.Sprintf("        AdvOnLink %s;\n", boolToOnOff(prefix.OnLink)))
 		config.WriteString(fmt.Sprintf("        AdvAutonomous %s;\n", boolToOnOff(prefix.Autonomous)))
-		config.WriteString(fmt.Sprintf("        AdvValidLifetime %d;\n", prefix.ValidLifetime))
-		config.WriteString(fmt.Sprintf("        AdvPreferredLifetime %d;\n", prefix.PreferredLifetime))
-		if prefix.RouterAddr {
-			config.WriteString("        AdvRouterAddr on;\n")
+		config.WriteString(fmt.Sprintf("        AdvRouterAddr %s;\n", boolToOnOff(prefix.RouterAddr)))
+
+		// Only include lifetime settings if they differ from defaults
+		if prefix.ValidLifetime != 1800 {
+			config.WriteString(fmt.Sprintf("        AdvValidLifetime %d;\n", prefix.ValidLifetime))
 		}
+		if prefix.PreferredLifetime != 900 {
+			config.WriteString(fmt.Sprintf("        AdvPreferredLifetime %d;\n", prefix.PreferredLifetime))
+		}
+
 		config.WriteString("    };\n")
 	}
 
-	// Add routes
+	// Add manual routes (one-liner format)
 	for _, route := range r.Routes {
-		config.WriteString(fmt.Sprintf("    route %s {\n", route.Prefix))
-		config.WriteString(fmt.Sprintf("        AdvRoutePreference %s;\n", route.Preference))
-		config.WriteString(fmt.Sprintf("        AdvRouteLifetime %d;\n", route.Lifetime))
-		config.WriteString("    };\n")
+		config.WriteString(fmt.Sprintf("    route %s { AdvRoutePreference %s; AdvRouteLifetime %d; };\n",
+			route.Prefix, route.Preference, route.Lifetime))
+	}
+
+	// Add auto-generated routes from netmap6 (one-liner format)
+	if len(r.AutoRoutes) > 0 {
+		config.WriteString("    # Auto-generated routes from netmap6\n")
+		for _, route := range r.AutoRoutes {
+			config.WriteString(fmt.Sprintf("    route %s { AdvRoutePreference %s; AdvRouteLifetime %d; };\n",
+				route.Prefix, route.Preference, route.Lifetime))
+		}
 	}
 
 	config.WriteString("};\n\n")

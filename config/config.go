@@ -29,7 +29,7 @@ type Netmap6Config struct {
 }
 
 type MapPair struct {
-	Pair [2]string `yaml:"pair"`
+	Pair []interface{} `yaml:"pair"` // [public, private] or [public, private, preference, lifetime]
 }
 
 type Nat66Config struct {
@@ -47,31 +47,25 @@ type Nat44Config struct {
 }
 
 type RadvConfig struct {
-	Enabled         bool           `yaml:"enabled"`
-	MinAdvInterval  int            `yaml:"min-adv-interval"`
-	MaxAdvInterval  int            `yaml:"max-adv-interval"`
-	DefaultLifetime int            `yaml:"default-lifetime"`
-	Dhcp            bool           `yaml:"dhcp"`
-	Prefixes        []PrefixConfig `yaml:"prefixes"`
-	Routes          []RouteConfig  `yaml:"routes"`
-	Include         []string       `yaml:"include"`
+	Enabled     bool                  `yaml:"enabled"`
+	AdvInterval []int                 `yaml:"adv-interval"` // [min, max]
+	Lifetime    int                   `yaml:"lifetime"`
+	Dhcp        bool                  `yaml:"dhcp"`
+	Prefixes    []PrefixConfigCompact `yaml:"prefixes"`
+	Routes      []RouteArray          `yaml:"routes"`
+	Include     []string              `yaml:"include"`
 }
 
-type PrefixConfig struct {
-	Prefix            string `yaml:"prefix"`
-	Mode              string `yaml:"mode"`
-	OnLink            bool   `yaml:"on-link"`
-	Autonomous        bool   `yaml:"autonomous"`
-	ValidLifetime     int    `yaml:"valid-lifetime"`
-	PreferredLifetime int    `yaml:"preferred-lifetime"`
-	RouterAddr        bool   `yaml:"router-addr"`
+type PrefixConfigCompact struct {
+	Prefix   string `yaml:"prefix"`
+	OnLink   bool   `yaml:"on-link"`
+	Auto     bool   `yaml:"auto"`     // changed from autonomous
+	AdvAddr  bool   `yaml:"adv-addr"` // changed from router-addr
+	Lifetime []int  `yaml:"lifetime"` // [valid, preferred]
 }
 
-type RouteConfig struct {
-	Prefix     string `yaml:"prefix"`
-	Preference string `yaml:"preference"`
-	Metric     int    `yaml:"metric"`
-	Lifetime   int    `yaml:"lifetime"`
+type RouteArray struct {
+	Route []interface{} `yaml:"route"` // [prefix, preference, lifetime]
 }
 
 func ParseConfig(configPath string) (*Config, error) {

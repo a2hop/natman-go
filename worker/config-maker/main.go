@@ -348,25 +348,83 @@ func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConf
 		hasRoutes := false
 		for _, route := range routes {
 			if route.Interface == ifaceName {
-				routeEntries = `        - prefix: "::/0"
-          preference: medium
-          metric: 100
-          lifetime: 3600
+				routeEntries = `        - route: ["::/0", "medium", 3600]
 `
 				hasRoutes = true
 				break
 			}
 		}
 
-		// Add routes from radvd config
-		if hasRadvd {
-			for _, route := range radvdIface.Routes {
-				routeEntries += `        - prefix: "` + route.Prefix + `"
-          preference: ` + route.Preference + `
-          metric: 100
-          lifetime: ` + strconv.Itoa(route.Lifetime) + `
+		// Extract netmap mappings and correlate with radvd routes
+		var netmapMappings []NetmapMapping
+		var netmapWithRadv []NetmapMappingWithRadv
+		var prefixConfig NetmapPrefixConfig
+		if hasNetmap {
+			netmapMappings = extractNetmapMappings(ifaceNetmapRules)
+			prefixConfig = extractNetmapPrefixes(netmapMappings)
+
+			// Correlate netmap mappings with radvd routes
+			if hasRadvd {
+				netmapWithRadv = correlateNetmapWithRadvRoutes(netmapMappings, radvdIface.Routes)
+			}
+		}
+
+		// Generate netmap entries from captured rules with radv information
+		netmapEntries := ""
+		hasNetmapMaps := false
+		if hasNetmap {
+			for _, mapping := range netmapWithRadv {
+				// Convert full addresses to relative paths if prefixes are available
+				publicPath := mapping.Public
+				privatePath := mapping.Private
+
+				if prefixConfig.PublicPrefix != "" {
+					publicPath = removePrefix(mapping.Public, prefixConfig.PublicPrefix)
+				}
+				if prefixConfig.PrivatePrefix != "" {
+					privatePath = removePrefix(mapping.Private, prefixConfig.PrivatePrefix)
+				}
+
+				// Always add radv property with defaults if not already present
+				if mapping.HasRadv {
+					netmapEntries += `          - pair: ["` + publicPath + `", "` + privatePath + `", "` + mapping.RadvPreference + `", ` + strconv.Itoa(mapping.RadvLifetime) + `]
 `
-				hasRoutes = true
+				} else {
+					// Add default radv values
+					netmapEntries += `          - pair: ["` + publicPath + `", "` + privatePath + `", "high", 3600]
+`
+				}
+				hasNetmapMaps = true
+			}
+
+			// Add mappings without radv information
+			for _, mapping := range netmapMappings {
+				// Check if this mapping was already added with radv
+				alreadyAdded := false
+				for _, withRadv := range netmapWithRadv {
+					if mapping.Public == withRadv.Public && mapping.Private == withRadv.Private {
+						alreadyAdded = true
+						break
+					}
+				}
+
+				if !alreadyAdded {
+					// Convert full addresses to relative paths if prefixes are available
+					publicPath := mapping.Public
+					privatePath := mapping.Private
+
+					if prefixConfig.PublicPrefix != "" {
+						publicPath = removePrefix(mapping.Public, prefixConfig.PublicPrefix)
+					}
+					if prefixConfig.PrivatePrefix != "" {
+						privatePath = removePrefix(mapping.Private, prefixConfig.PrivatePrefix)
+					}
+
+					// Always add default radv values
+					netmapEntries += `          - pair: ["` + publicPath + `", "` + privatePath + `", "high", 3600]
+`
+					hasNetmapMaps = true
+				}
 			}
 		}
 
@@ -376,27 +434,12 @@ func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConf
 		if hasRadvd {
 			for _, prefix := range radvdIface.Prefixes {
 				prefixEntries += `        - prefix: "` + prefix.Prefix + `"
-          mode: "slaac"
           on-link: ` + boolToString(prefix.OnLink) + `
-          autonomous: ` + boolToString(prefix.Autonomous) + `
-          valid-lifetime: 1800
-          preferred-lifetime: 900
-          router-addr: ` + boolToString(prefix.RouterAddr) + `
+          auto: ` + boolToString(prefix.Autonomous) + `
+          adv-addr: ` + boolToString(prefix.RouterAddr) + `
+          lifetime: [1800, 900]
 `
 				hasPrefixes = true
-			}
-		}
-
-		// Generate netmap entries from captured rules
-		netmapEntries := ""
-		hasNetmapMaps := false
-		if hasNetmap {
-			// Group rules into pairs (PREROUTING/POSTROUTING pairs)
-			mappings := extractNetmapMappings(ifaceNetmapRules)
-			for _, mapping := range mappings {
-				netmapEntries += `          - pair: ["` + mapping.Public + `", "` + mapping.Private + `"]
-`
-				hasNetmapMaps = true
 			}
 		}
 
@@ -440,6 +483,16 @@ func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConf
         c1:
           enabled: ` + boolToString(hasNetmap && hasNetmapMaps) + `
 `
+			// Add prefixes if they were extracted
+			if prefixConfig.PublicPrefix != "" {
+				config += `          pfx-pub: "` + prefixConfig.PublicPrefix + `"
+`
+			}
+			if prefixConfig.PrivatePrefix != "" {
+				config += `          pfx-priv: "` + prefixConfig.PrivatePrefix + `"
+`
+			}
+
 			if hasNetmapMaps {
 				config += `          maps:
 ` + netmapEntries
@@ -473,9 +526,8 @@ func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConf
 		if (hasRadvd && (hasPrefixes || hasRoutes)) || (!slim && hasRadvd) || (!slim && !hasRadvd) {
 			config += `      radv:
         enabled: ` + boolToString(hasRadvd) + `
-        min-adv-interval: ` + strconv.Itoa(minInterval) + `
-        max-adv-interval: ` + strconv.Itoa(maxInterval) + `
-        default-lifetime: ` + strconv.Itoa(defaultLifetime) + `
+        adv-interval: [` + strconv.Itoa(minInterval) + `, ` + strconv.Itoa(maxInterval) + `]
+        lifetime: ` + strconv.Itoa(defaultLifetime) + `
         dhcp: ` + boolToString(dhcp) + `
 `
 
@@ -500,6 +552,33 @@ func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConf
 	}
 
 	return config
+}
+
+// correlateNetmapWithRadvRoutes matches netmap mappings with radvd routes
+func correlateNetmapWithRadvRoutes(mappings []NetmapMapping, routes []RadvdRoute) []NetmapMappingWithRadv {
+	var result []NetmapMappingWithRadv
+
+	for _, mapping := range mappings {
+		mappingWithRadv := NetmapMappingWithRadv{
+			Public:  mapping.Public,
+			Private: mapping.Private,
+			HasRadv: false,
+		}
+
+		// Look for matching radvd route
+		for _, route := range routes {
+			if route.Prefix == mapping.Public {
+				mappingWithRadv.HasRadv = true
+				mappingWithRadv.RadvPreference = route.Preference
+				mappingWithRadv.RadvLifetime = route.Lifetime
+				break
+			}
+		}
+
+		result = append(result, mappingWithRadv)
+	}
+
+	return result
 }
 
 func extractNetmapMappings(rules []NetmapRule) []NetmapMapping {
@@ -544,6 +623,106 @@ func extractNetmapMappings(rules []NetmapRule) []NetmapMapping {
 	}
 
 	return mappings
+}
+
+// extractNetmapPrefixes analyzes netmap mappings to extract common prefixes
+func extractNetmapPrefixes(mappings []NetmapMapping) NetmapPrefixConfig {
+	var config NetmapPrefixConfig
+
+	if len(mappings) == 0 {
+		return config
+	}
+
+	// Find common prefixes by analyzing all mappings
+	publicPrefix := findCommonIPv6Prefix(mappings, true)
+	privatePrefix := findCommonIPv6Prefix(mappings, false)
+
+	config.PublicPrefix = publicPrefix
+	config.PrivatePrefix = privatePrefix
+
+	return config
+}
+
+// findCommonIPv6Prefix finds the common /64 prefix for public or private addresses
+func findCommonIPv6Prefix(mappings []NetmapMapping, isPublic bool) string {
+	if len(mappings) == 0 {
+		return ""
+	}
+
+	var addresses []string
+	for _, mapping := range mappings {
+		if isPublic {
+			addresses = append(addresses, mapping.Public)
+		} else {
+			addresses = append(addresses, mapping.Private)
+		}
+	}
+
+	// Find the longest common prefix
+	commonPrefix := ""
+	if len(addresses) > 0 {
+		// Parse the first address to establish base
+		firstAddr := addresses[0]
+		if strings.Contains(firstAddr, "/") {
+			// Remove CIDR notation
+			firstAddr = strings.Split(firstAddr, "/")[0]
+		}
+
+		// Split by colons to analyze segments
+
+		// Try different prefix lengths to find the optimal one
+		segments := strings.Split(firstAddr, ":")
+		for prefixLen := 3; prefixLen >= 1; prefixLen-- {
+			if len(segments) >= prefixLen {
+				candidatePrefix := strings.Join(segments[:prefixLen], ":") + ":"
+
+				// Verify this prefix works for all addresses and results in meaningful reduction
+				allMatch := true
+				hasReduction := false
+
+				for _, addr := range addresses {
+					cleanAddr := addr
+					if strings.Contains(cleanAddr, "/") {
+						cleanAddr = strings.Split(cleanAddr, "/")[0]
+					}
+
+					if !strings.HasPrefix(cleanAddr, candidatePrefix) {
+						allMatch = false
+						break
+					}
+
+					// Check if using this prefix would actually reduce the address
+					remaining := strings.TrimPrefix(cleanAddr, candidatePrefix)
+					remaining = strings.TrimPrefix(remaining, ":")
+					if len(remaining) > 0 && remaining != cleanAddr {
+						hasReduction = true
+					}
+				}
+
+				if allMatch && hasReduction {
+					commonPrefix = candidatePrefix
+					break // Use the longest valid prefix
+				}
+			}
+		}
+	}
+
+	return commonPrefix
+}
+
+// removePrefix removes the given prefix from an IPv6 address/range
+func removePrefix(address, prefix string) string {
+	if prefix == "" || !strings.HasPrefix(address, prefix) {
+		return address
+	}
+
+	// Remove the prefix and return the remaining part
+	remaining := strings.TrimPrefix(address, prefix)
+
+	// Handle cases where the remaining part starts with ":"
+	remaining = strings.TrimPrefix(remaining, ":")
+
+	return remaining
 }
 
 func scanRadvdConfig() (map[string]RadvdInterface, error) {
@@ -961,6 +1140,14 @@ type NetmapMapping struct {
 	Private string
 }
 
+type NetmapMappingWithRadv struct {
+	Public         string
+	Private        string
+	HasRadv        bool
+	RadvPreference string
+	RadvLifetime   int
+}
+
 type Nat66Rule struct {
 	Interface   string
 	Direction   string // PREROUTING or POSTROUTING
@@ -968,6 +1155,11 @@ type Nat66Rule struct {
 	Target      string // MASQUERADE, SNAT, DNAT
 	Source      string
 	Destination string
+}
+
+type NetmapPrefixConfig struct {
+	PublicPrefix  string
+	PrivatePrefix string
 }
 
 func WriteConfigToFile(config, filePath string) error {

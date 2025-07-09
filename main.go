@@ -14,11 +14,30 @@ import (
 	radvdmanager "natman/worker/radvd-manager"
 )
 
+// Global debug flag
+var Debug bool = false
+
+// SetDebug sets the debug mode for verbose output
+func SetDebug(debug bool) {
+	Debug = debug
+
+	// Also set debug for component managers
+	netmapmanager.SetDebug(debug)
+}
+
+// DebugPrint prints a message if debug mode is enabled
+func DebugPrint(format string, args ...interface{}) {
+	if Debug {
+		fmt.Printf("[DEBUG] "+format+"\n", args...)
+	}
+}
+
 func main() {
 	// Parse command line arguments manually to handle flags after commands
 	var configPath string = "/etc/natman/config.yaml" // default
 	var slim bool = false                             // default
 	var quiet bool = false                            // default
+	var debug bool = false                            // default
 	var command string
 
 	// Parse arguments manually
@@ -39,6 +58,8 @@ func main() {
 			slim = true
 		} else if arg == "--quiet" || arg == "-q" {
 			quiet = true
+		} else if arg == "--debug" || arg == "-d" {
+			debug = true
 		} else if arg == "-h" || arg == "--help" {
 			showHelp()
 			return
@@ -50,6 +71,9 @@ func main() {
 			nonFlagArgs = append(nonFlagArgs, arg)
 		}
 	}
+
+	// Set global debug flag
+	SetDebug(debug)
 
 	// Get command from non-flag arguments
 	if len(nonFlagArgs) > 0 {
@@ -112,6 +136,7 @@ func showHelp() {
 	fmt.Println("OPTIONS:")
 	fmt.Println("    -c, --c=PATH     Configuration file path (default: /etc/natman/config.yaml)")
 	fmt.Println("    -q, --quiet      Suppress non-essential output")
+	fmt.Println("    -d, --debug      Enable debug output")
 	fmt.Println("    -h, --help       Show this help message")
 	fmt.Println("")
 	fmt.Println("COMMANDS:")
@@ -181,8 +206,11 @@ func runStatus(configPath string) error {
 	// Build links
 	links := link.BuildLinks(cfg)
 
-	// Print netmap status
-	netmapmanager.PrintNetmapRules(links)
+	// Print netmap status if function exists
+	fmt.Println("\nNETMAP Status:")
+	if err := netmapmanager.PrintNetmapRules(links); err != nil {
+		fmt.Printf("  Error displaying NETMAP rules: %v\n", err)
+	}
 
 	// Check radvd status
 	fmt.Println("\nRadvd Service Status:")
@@ -234,6 +262,7 @@ func runNormalFlow(configPath string, quiet bool) error {
 	}
 
 	// Parse config file
+	DebugPrint("Parsing config file: %s", configPath)
 	cfg, err := config.ParseConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse config: %v", err)
@@ -247,6 +276,7 @@ func runNormalFlow(configPath string, quiet bool) error {
 	if !quiet {
 		fmt.Printf("Loaded configuration with %d links\n", len(cfg.Network.Links))
 	}
+	DebugPrint("Configuration loaded with %d links", len(cfg.Network.Links))
 
 	// Build the link model
 	links := link.BuildLinks(cfg)
@@ -256,43 +286,67 @@ func runNormalFlow(configPath string, quiet bool) error {
 	if !quiet {
 		fmt.Println("Built link models")
 	}
+	DebugPrint("Built link models with %d links", len(links))
+
+	// Dump link configuration in debug mode
+	if Debug {
+		for name, linkObj := range links {
+			DebugPrint("Link: %s", name)
+			for netmapName, netmapObj := range linkObj.Netmap6 {
+				DebugPrint("  Netmap6: %s (enabled: %t)", netmapName, netmapObj.Enabled)
+				DebugPrint("    PfxPub: %s", netmapObj.PfxPub)
+				DebugPrint("    PfxPriv: %s", netmapObj.PfxPriv)
+				DebugPrint("    Maps: %d entries", len(netmapObj.Maps))
+				for i, mapping := range netmapObj.Maps {
+					DebugPrint("      Map[%d]: Public=%s, Private=%s", i, mapping.Public, mapping.Private)
+				}
+			}
+		}
+	}
 
 	// Run natmaker (NAT44/NAT66 configuration)
 	if !quiet {
 		fmt.Println("Applying NAT rules...")
 	}
+	DebugPrint("Applying NAT rules")
 	if err := natmanager.ApplyNatRules(links); err != nil {
 		return fmt.Errorf("failed to apply NAT rules: %v", err)
 	}
 	if !quiet {
 		fmt.Println("NAT rules applied successfully")
 	}
+	DebugPrint("NAT rules applied successfully")
 
 	// Run netmapmaker (IPv6 network mapping)
 	if !quiet {
 		fmt.Println("Applying netmap rules...")
 	}
+	DebugPrint("Applying netmap rules")
 	if err := netmapmanager.ApplyNetmapRules(links); err != nil {
 		return fmt.Errorf("failed to apply netmap rules: %v", err)
 	}
 	if !quiet {
 		fmt.Println("Netmap rules applied successfully")
 	}
+	DebugPrint("Netmap rules applied successfully")
 
 	// Run radvdmaker (Router Advertisement configuration)
 	if !quiet {
 		fmt.Println("Updating radvd configuration...")
 	}
+	DebugPrint("Updating radvd configuration")
 	if err := radvdmanager.CreateRadvdConfig(links); err != nil {
 		return fmt.Errorf("failed to update radvd config: %v", err)
 	}
 	if !quiet {
 		fmt.Println("Radvd configuration updated successfully")
 	}
+	DebugPrint("Radvd configuration updated successfully")
 
 	if !quiet {
 		fmt.Println("All configurations applied successfully!")
 	}
+	DebugPrint("All configurations applied successfully")
 	return nil
 }
 

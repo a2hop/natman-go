@@ -1,14 +1,16 @@
 network:
   links:
     # Example configuration
-    # eth0:
+    # gtwl:
     #   netmap6:
-    #     set1:
-    #       enabled: false
-    #       pfx-pub: "2001:db8:1::"
-    #       pfx-priv: "fd00:1::"
+    #     c1:
+    #       enabled: true
+    #       pfx-pub: "e2::3:"
+    #       pfx-priv: "b30::"
     #       maps:
-    #         - pair: ["2001:db8:1::100", "fd00:1::100"]
+    #       - pair: ["0:25:0:0/96", "20:0:0/96", "high", 3600]   # [public, private, preference, lifetime]
+    #       - pair: ["0:a15:0:0/96", "21:0:0/96", "high", 3600]
+    #       - pair: ["b:aa21:0:0/96", "22:0:0/96", "high", 3600]
     #   nat66:
     #     enabled: false
     #     mss-clamping: false
@@ -20,10 +22,16 @@ network:
     #     mss: 1440
     #     origins: []
     #   radv:
-    #     enabled: false
-    #     min-adv-interval: 30
-    #     max-adv-interval: 60
-    #     default-lifetime: 180
+    #     enabled: true
+    #     adv-interval: [15, 100]  # [min, max]
+    #     lifetime: 180
     #     dhcp: false
-    #     prefixes: []
-    #     routes: []
+    #     prefixes:
+    #     - prefix: "a7:62:1:1::/64"
+    #       on-link: false
+    #       auto: true
+    #       adv-addr: true
+    #       lifetime: [1800, 900]  # [valid, preferred]
+    #     routes:
+    #     - route: ["2000::/3", "high", 3600]  # [prefix, preference, lifetime]
+    #     # Routes from netmap6 with radv property will be auto-generated
