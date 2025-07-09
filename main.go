@@ -427,9 +427,9 @@ func runShowRadvd() error {
 
 	fmt.Printf("Radvd Service Status: ")
 	if active {
-		fmt.Println("✓ Active")
+		fmt.Println("[Active]")
 	} else {
-		fmt.Println("✗ Inactive")
+		fmt.Println("[Inactive]")
 	}
 
 	// Read and display radvd configuration file
@@ -468,7 +468,7 @@ func runShowRadvd() error {
 			if len(parts) >= 2 {
 				currentInterface = strings.TrimSuffix(parts[1], "{")
 			}
-			fmt.Printf("\n📡 Interface: %s\n", currentInterface)
+			fmt.Printf("\n[Interface: %s]\n", currentInterface)
 
 			// Look ahead for configuration in this interface block
 			j := i + 1
@@ -536,7 +536,7 @@ func runShowRadvd() error {
 			if len(parts) >= 2 {
 				prefix = strings.TrimSuffix(parts[1], "{")
 			}
-			fmt.Printf("   ├─ 🌐 Prefix: %s\n", prefix)
+			fmt.Printf("   ├─ Prefix: %s\n", prefix)
 
 			// Look ahead for prefix configuration
 			j := i + 1
@@ -591,7 +591,7 @@ func runShowRadvd() error {
 		// Parse route blocks
 		if strings.Contains(line, "route") && strings.Contains(line, "{") {
 			routeCount++
-			// Extract route
+			// Extract route destination
 			parts := strings.Fields(line)
 			var route string
 			if len(parts) >= 2 {
@@ -610,25 +610,31 @@ func runShowRadvd() error {
 				}
 				if strings.Contains(innerLine, "}") {
 					braceCount--
-				}
-
-				if strings.Contains(innerLine, "AdvRouteLifetime") {
-					parts := strings.Fields(innerLine)
-					if len(parts) >= 2 {
-						routeLifetime = strings.TrimSuffix(parts[1], ";")
+					if braceCount == 0 {
+						break
 					}
 				}
-				if strings.Contains(innerLine, "AdvRoutePreference") {
-					parts := strings.Fields(innerLine)
-					if len(parts) >= 2 {
-						routePreference = strings.TrimSuffix(parts[1], ";")
+
+				// Only process configuration lines within this route block
+				if braceCount == 1 {
+					if strings.Contains(innerLine, "AdvRouteLifetime") {
+						parts := strings.Fields(innerLine)
+						if len(parts) >= 2 {
+							routeLifetime = strings.TrimSuffix(parts[1], ";")
+						}
+					}
+					if strings.Contains(innerLine, "AdvRoutePreference") {
+						parts := strings.Fields(innerLine)
+						if len(parts) >= 2 {
+							routePreference = strings.TrimSuffix(parts[1], ";")
+						}
 					}
 				}
 				j++
 			}
 
 			// Display route as one-liner similar to ip route
-			routeLine := fmt.Sprintf("   ├─ 🛣️  %s dev %s", route, currentInterface)
+			routeLine := fmt.Sprintf("   ├─ Route: %s dev %s", route, currentInterface)
 			if routePreference != "" {
 				routeLine += fmt.Sprintf(" pref %s", routePreference)
 			}
@@ -640,7 +646,7 @@ func runShowRadvd() error {
 	}
 
 	// Summary
-	fmt.Printf("\n📊 Summary:\n")
+	fmt.Printf("\nSummary:\n")
 	fmt.Printf("   ├─ Interfaces configured: %d\n", interfaceCount)
 	fmt.Printf("   ├─ IPv6 prefixes announced: %d\n", prefixCount)
 	fmt.Printf("   └─ Additional routes announced: %d\n", routeCount)
@@ -650,7 +656,7 @@ func runShowRadvd() error {
 
 func boolToStatus(b bool) string {
 	if b {
-		return "✓ Enabled"
+		return "[Enabled]"
 	}
-	return "✗ Disabled"
+	return "[Disabled]"
 }
