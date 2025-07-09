@@ -427,9 +427,9 @@ func runShowRadvd() error {
 
 	fmt.Printf("Radvd Service Status: ")
 	if active {
-		fmt.Println("Active")
+		fmt.Println("✓ Active")
 	} else {
-		fmt.Println("Inactive")
+		fmt.Println("✗ Inactive")
 	}
 
 	// Read and display radvd configuration file
@@ -444,34 +444,211 @@ func runShowRadvd() error {
 		return fmt.Errorf("failed to read radvd config: %v", err)
 	}
 
-	fmt.Printf("\nRadvd Configuration (%s):\n", configPath)
-	fmt.Println("=" + strings.Repeat("=", len(configPath)+23))
+	fmt.Printf("\nRadvd Configuration Analysis (%s):\n", configPath)
+	fmt.Println(strings.Repeat("=", 50))
 
-	// Parse and highlight route-related sections
+	// Parse configuration and extract meaningful information
 	lines := strings.Split(string(content), "\n")
-	inInterface := false
-	for _, line := range lines {
+	var currentInterface string
+	var interfaceCount int
+	var prefixCount int
+	var routeCount int
+
+	for i, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 
-		if strings.Contains(line, "interface") {
-			inInterface = true
-			fmt.Printf("\n%s\n", line)
-		} else if strings.Contains(line, "}") && inInterface {
-			inInterface = false
-			fmt.Printf("%s\n", line)
-		} else if inInterface {
-			// Highlight route-related directives
-			if strings.Contains(line, "route") || strings.Contains(line, "prefix") ||
-				strings.Contains(line, "AdvRoutePreference") || strings.Contains(line, "AdvRouteLifetime") {
-				fmt.Printf("  >>> %s\n", line)
-			} else {
-				fmt.Printf("      %s\n", line)
+		// Parse interface blocks
+		if strings.Contains(line, "interface") && strings.Contains(line, "{") {
+			interfaceCount++
+			// Extract interface name
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				currentInterface = strings.TrimSuffix(parts[1], "{")
+			}
+			fmt.Printf("\n📡 Interface: %s\n", currentInterface)
+
+			// Look ahead for configuration in this interface block
+			j := i + 1
+			braceCount := 1
+			var advSendAdvert, advDefaultRoute bool
+			var minInterval, maxInterval, defaultLifetime string
+
+			for j < len(lines) && braceCount > 0 {
+				innerLine := strings.TrimSpace(lines[j])
+				if strings.Contains(innerLine, "{") {
+					braceCount++
+				}
+				if strings.Contains(innerLine, "}") {
+					braceCount--
+				}
+
+				if strings.Contains(innerLine, "AdvSendAdvert") {
+					if strings.Contains(innerLine, "on") {
+						advSendAdvert = true
+					}
+				}
+				if strings.Contains(innerLine, "AdvDefaultRoute") {
+					if strings.Contains(innerLine, "on") {
+						advDefaultRoute = true
+					}
+				}
+				if strings.Contains(innerLine, "MinRtrAdvInterval") {
+					parts := strings.Fields(innerLine)
+					if len(parts) >= 2 {
+						minInterval = strings.TrimSuffix(parts[1], ";")
+					}
+				}
+				if strings.Contains(innerLine, "MaxRtrAdvInterval") {
+					parts := strings.Fields(innerLine)
+					if len(parts) >= 2 {
+						maxInterval = strings.TrimSuffix(parts[1], ";")
+					}
+				}
+				if strings.Contains(innerLine, "AdvDefaultLifetime") {
+					parts := strings.Fields(innerLine)
+					if len(parts) >= 2 {
+						defaultLifetime = strings.TrimSuffix(parts[1], ";")
+					}
+				}
+				j++
+			}
+
+			// Display interface summary
+			fmt.Printf("   ├─ Router Advertisements: %s\n", boolToStatus(advSendAdvert))
+			fmt.Printf("   ├─ Default Route Advertisement: %s\n", boolToStatus(advDefaultRoute))
+			if minInterval != "" && maxInterval != "" {
+				fmt.Printf("   ├─ Advertisement Interval: %s-%s seconds\n", minInterval, maxInterval)
+			}
+			if defaultLifetime != "" {
+				fmt.Printf("   ├─ Default Route Lifetime: %s seconds\n", defaultLifetime)
+			}
+		}
+
+		// Parse prefix blocks
+		if strings.Contains(line, "prefix") && strings.Contains(line, "{") {
+			prefixCount++
+			// Extract prefix
+			parts := strings.Fields(line)
+			var prefix string
+			if len(parts) >= 2 {
+				prefix = strings.TrimSuffix(parts[1], "{")
+			}
+			fmt.Printf("   ├─ 🌐 Prefix: %s\n", prefix)
+
+			// Look ahead for prefix configuration
+			j := i + 1
+			braceCount := 1
+			var advOnLink, advAutonomous, advRouterAddr bool
+			var validLifetime, preferredLifetime string
+
+			for j < len(lines) && braceCount > 0 {
+				innerLine := strings.TrimSpace(lines[j])
+				if strings.Contains(innerLine, "{") {
+					braceCount++
+				}
+				if strings.Contains(innerLine, "}") {
+					braceCount--
+				}
+
+				if strings.Contains(innerLine, "AdvOnLink") {
+					advOnLink = strings.Contains(innerLine, "on")
+				}
+				if strings.Contains(innerLine, "AdvAutonomous") {
+					advAutonomous = strings.Contains(innerLine, "on")
+				}
+				if strings.Contains(innerLine, "AdvRouterAddr") {
+					advRouterAddr = strings.Contains(innerLine, "on")
+				}
+				if strings.Contains(innerLine, "AdvValidLifetime") {
+					parts := strings.Fields(innerLine)
+					if len(parts) >= 2 {
+						validLifetime = strings.TrimSuffix(parts[1], ";")
+					}
+				}
+				if strings.Contains(innerLine, "AdvPreferredLifetime") {
+					parts := strings.Fields(innerLine)
+					if len(parts) >= 2 {
+						preferredLifetime = strings.TrimSuffix(parts[1], ";")
+					}
+				}
+				j++
+			}
+
+			fmt.Printf("   │  ├─ On-Link: %s\n", boolToStatus(advOnLink))
+			fmt.Printf("   │  ├─ Autonomous Config: %s\n", boolToStatus(advAutonomous))
+			fmt.Printf("   │  ├─ Router Address: %s\n", boolToStatus(advRouterAddr))
+			if validLifetime != "" {
+				fmt.Printf("   │  ├─ Valid Lifetime: %s\n", validLifetime)
+			}
+			if preferredLifetime != "" {
+				fmt.Printf("   │  └─ Preferred Lifetime: %s\n", preferredLifetime)
+			}
+		}
+
+		// Parse route blocks
+		if strings.Contains(line, "route") && strings.Contains(line, "{") {
+			routeCount++
+			// Extract route
+			parts := strings.Fields(line)
+			var route string
+			if len(parts) >= 2 {
+				route = strings.TrimSuffix(parts[1], "{")
+			}
+			fmt.Printf("   ├─ 🛣️  Route: %s\n", route)
+
+			// Look ahead for route configuration
+			j := i + 1
+			braceCount := 1
+			var routeLifetime, routePreference string
+
+			for j < len(lines) && braceCount > 0 {
+				innerLine := strings.TrimSpace(lines[j])
+				if strings.Contains(innerLine, "{") {
+					braceCount++
+				}
+				if strings.Contains(innerLine, "}") {
+					braceCount--
+				}
+
+				if strings.Contains(innerLine, "AdvRouteLifetime") {
+					parts := strings.Fields(innerLine)
+					if len(parts) >= 2 {
+						routeLifetime = strings.TrimSuffix(parts[1], ";")
+					}
+				}
+				if strings.Contains(innerLine, "AdvRoutePreference") {
+					parts := strings.Fields(innerLine)
+					if len(parts) >= 2 {
+						routePreference = strings.TrimSuffix(parts[1], ";")
+					}
+				}
+				j++
+			}
+
+			if routeLifetime != "" {
+				fmt.Printf("   │  ├─ Route Lifetime: %s\n", routeLifetime)
+			}
+			if routePreference != "" {
+				fmt.Printf("   │  └─ Route Preference: %s\n", routePreference)
 			}
 		}
 	}
 
+	// Summary
+	fmt.Printf("\n📊 Summary:\n")
+	fmt.Printf("   ├─ Interfaces configured: %d\n", interfaceCount)
+	fmt.Printf("   ├─ IPv6 prefixes announced: %d\n", prefixCount)
+	fmt.Printf("   └─ Additional routes announced: %d\n", routeCount)
+
 	return nil
+}
+
+func boolToStatus(b bool) string {
+	if b {
+		return "✓ Enabled"
+	}
+	return "✗ Disabled"
 }
