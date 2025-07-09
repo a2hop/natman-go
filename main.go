@@ -319,6 +319,9 @@ func runNormalFlow(configPath string, quiet bool) error {
 		}
 	}
 
+	// Set quiet mode for component managers
+	natmanager.SetQuietMode(quiet)
+
 	// Run natmaker (NAT44/NAT66 configuration)
 	if !quiet {
 		fmt.Println("Applying NAT rules...")

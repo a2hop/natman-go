@@ -44,7 +44,7 @@ func applyNat44Rules(links map[string]*link.Link) error {
 		return err
 	}
 
-	// Debug: Print current rules if not in quiet mode
+	// Debug: Print current rules only if not in quiet mode
 	if !QuietMode && len(currentRules) > 0 {
 		fmt.Println("Current NAT44 rules:")
 		for _, rule := range currentRules {
@@ -61,7 +61,7 @@ func applyNat44Rules(links map[string]*link.Link) error {
 		}
 	}
 
-	// Debug: Print new rules if not in quiet mode
+	// Debug: Print new rules only if not in quiet mode
 	if !QuietMode && len(newRules) > 0 {
 		fmt.Println("New NAT44 rules to apply:")
 		for _, rule := range newRules {
@@ -326,6 +326,10 @@ func difference(slice1, slice2 []string) []string {
 }
 
 func PrintCurrentNatRules() error {
+	if QuietMode {
+		return nil
+	}
+
 	fmt.Println("Current NAT Rules:")
 	fmt.Println("==================")
 
