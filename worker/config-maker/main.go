@@ -293,12 +293,12 @@ func parseNat66RuleForConfig(line, chain string) Nat66Rule {
 		if outInterface != "any" && outInterface != "*" && outInterface != "--" {
 			rule.Interface = outInterface
 			rule.Direction = "POSTROUTING"
-		}
-	} else if chain == "PREROUTING" {
-		// For PREROUTING, packets come IN on the interface
-		if inInterface != "any" && inInterface != "*" && inInterface != "--" {
-			rule.Interface = inInterface
-			rule.Direction = "PREROUTING"
+		} else if chain == "PREROUTING" {
+			// For PREROUTING, packets come IN on the interface
+			if inInterface != "any" && inInterface != "*" && inInterface != "--" {
+				rule.Interface = inInterface
+				rule.Direction = "PREROUTING"
+			}
 		}
 	}
 
@@ -914,11 +914,23 @@ func parsePrefixBlocks(content string) []RadvdPrefix {
 			for _, blockLine := range blockLines {
 				blockLine = strings.TrimSpace(blockLine)
 				if strings.Contains(blockLine, "AdvOnLink") {
-					prefix.OnLink = strings.Contains(blockLine, "on")
+					if strings.Contains(blockLine, "off") {
+						prefix.OnLink = false
+					} else if strings.Contains(blockLine, "on") {
+						prefix.OnLink = true
+					}
 				} else if strings.Contains(blockLine, "AdvAutonomous") {
-					prefix.Autonomous = strings.Contains(blockLine, "on")
+					if strings.Contains(blockLine, "off") {
+						prefix.Autonomous = false
+					} else if strings.Contains(blockLine, "on") {
+						prefix.Autonomous = true
+					}
 				} else if strings.Contains(blockLine, "AdvRouterAddr") {
-					prefix.RouterAddr = strings.Contains(blockLine, "on")
+					if strings.Contains(blockLine, "off") {
+						prefix.RouterAddr = false
+					} else if strings.Contains(blockLine, "on") {
+						prefix.RouterAddr = true
+					}
 				}
 			}
 
