@@ -46,7 +46,14 @@ func ScanSystemAndGenerateConfigSlim(slim bool) (string, error) {
 		nat66Rules = make(map[string][]Nat66Rule)
 	}
 
-	config := generateConfigYAML(interfaces, routes, radvdConfig, netmapRules, nat66Rules, slim)
+	// Scan existing NAT44 rules
+	nat44Rules, err := scanNat44Rules()
+	if err != nil {
+		// Don't fail if NAT44 rules can't be scanned, just continue without them
+		nat44Rules = make(map[string][]Nat44Rule)
+	}
+
+	config := generateConfigYAML(interfaces, routes, radvdConfig, netmapRules, nat66Rules, nat44Rules, slim)
 	return config, nil
 }
 
@@ -305,7 +312,98 @@ func parseNat66RuleForConfig(line, chain string) Nat66Rule {
 	return rule
 }
 
-func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConfig map[string]RadvdInterface, netmapRules map[string][]NetmapRule, nat66Rules map[string][]Nat66Rule, slim bool) string {
+func scanNat44Rules() (map[string][]Nat44Rule, error) {
+	cmd := exec.Command("iptables", "-t", "nat", "-L", "-n", "-v")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	return parseNat44RulesForConfig(string(output)), nil
+}
+
+func parseNat44RulesForConfig(output string) map[string][]Nat44Rule {
+	rules := make(map[string][]Nat44Rule)
+	lines := strings.Split(output, "\n")
+
+	var currentChain string
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Detect chain headers
+		if strings.HasPrefix(line, "Chain ") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				currentChain = parts[1]
+			}
+			continue
+		}
+
+		// Skip header lines and empty lines
+		if line == "" || strings.Contains(line, "pkts bytes target") || strings.Contains(line, "prot opt source") {
+			continue
+		}
+
+		// Parse NAT44 rules (MASQUERADE, SNAT, DNAT)
+		if (strings.Contains(line, "MASQUERADE") || strings.Contains(line, "SNAT") || strings.Contains(line, "DNAT")) && currentChain != "" {
+			rule := parseNat44RuleForConfig(line, currentChain)
+			if rule.Interface != "" {
+				rules[rule.Interface] = append(rules[rule.Interface], rule)
+			}
+		}
+	}
+
+	return rules
+}
+
+func parseNat44RuleForConfig(line, chain string) Nat44Rule {
+	fields := strings.Fields(line)
+	rule := Nat44Rule{
+		Chain: chain,
+	}
+
+	if len(fields) < 8 {
+		return rule
+	}
+
+	// iptables -L -n -v output format:
+	// pkts bytes target prot opt in     out    source               destination         [extra options]
+	// Example: 59  4687 MASQUERADE all  --  any    eth0    anywhere             anywhere
+	//          0   1    2          3    4   5      6       7                    8
+
+	// Extract target type
+	rule.Target = fields[2]
+
+	// Extract interface information from correct positions
+	inInterface := fields[5]  // "in" interface
+	outInterface := fields[6] // "out" interface
+
+	// Extract source and destination
+	if len(fields) > 8 {
+		rule.Source = fields[7]
+		rule.Destination = fields[8]
+	}
+
+	// Determine interface and direction based on chain
+	if chain == "POSTROUTING" {
+		// For POSTROUTING, packets go OUT on the interface
+		if outInterface != "any" && outInterface != "*" && outInterface != "--" {
+			rule.Interface = outInterface
+			rule.Direction = "POSTROUTING"
+		}
+	} else if chain == "PREROUTING" {
+		// For PREROUTING, packets come IN on the interface
+		if inInterface != "any" && inInterface != "*" && inInterface != "--" {
+			rule.Interface = inInterface
+			rule.Direction = "PREROUTING"
+		}
+	}
+
+	return rule
+}
+
+func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConfig map[string]RadvdInterface, netmapRules map[string][]NetmapRule, nat66Rules map[string][]Nat66Rule, nat44Rules map[string][]Nat44Rule, slim bool) string {
 	config := `network:
   links:
 `
@@ -333,6 +431,11 @@ func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConf
 		allInterfaces[ifaceName] = true
 	}
 
+	// Add interfaces from NAT44 rules
+	for ifaceName := range nat44Rules {
+		allInterfaces[ifaceName] = true
+	}
+
 	for ifaceName := range allInterfaces {
 		// Get radvd config for this interface
 		radvdIface, hasRadvd := radvdConfig[ifaceName]
@@ -343,15 +446,29 @@ func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConf
 		// Get NAT66 rules for this interface
 		ifaceNat66Rules, hasNat66 := nat66Rules[ifaceName]
 
-		// Generate route entries based on scanned routes
+		// Get NAT44 rules for this interface
+		ifaceNat44Rules, hasNat44 := nat44Rules[ifaceName]
+
+		// Generate route entries based on scanned routes AND radvd routes
 		routeEntries := ""
 		hasRoutes := false
+
+		// Add system routes
 		for _, route := range routes {
 			if route.Interface == ifaceName {
-				routeEntries = `        - route: ["::/0", "medium", 3600]
+				routeEntries += `        - route: ["::/0", "medium", 3600]
 `
 				hasRoutes = true
 				break
+			}
+		}
+
+		// Add radvd routes
+		if hasRadvd {
+			for _, route := range radvdIface.Routes {
+				routeEntries += `        - route: ["` + route.Prefix + `", "` + route.Preference + `", ` + strconv.Itoa(route.Lifetime) + `]
+`
+				hasRoutes = true
 			}
 		}
 
@@ -464,7 +581,7 @@ func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConf
 
 		// Check if nat66 is enabled based on captured rules
 		nat66Enabled := hasNat66 && len(ifaceNat66Rules) > 0
-		nat44Enabled := false // TODO: Add logic to detect if nat44 is enabled
+		nat44Enabled := hasNat44 && len(ifaceNat44Rules) > 0
 
 		// In slim mode, skip interfaces that have no enabled features
 		if slim {
@@ -546,6 +663,20 @@ func generateConfigYAML(interfaces []NetworkInterface, routes []Route, radvdConf
 ` + routeEntries
 			} else if !slim {
 				config += `        routes: []
+`
+			}
+
+			// Add RDNSS servers if they exist
+			if hasRadvd && len(radvdIface.RdnssServers) > 0 {
+				config += `        rdnss:
+`
+				for _, server := range radvdIface.RdnssServers {
+					config += `        - server: "` + server.Address + `"
+          lifetime: ` + strconv.Itoa(server.Lifetime) + `
+`
+				}
+			} else if !slim {
+				config += `        rdnss: []
 `
 			}
 		}
@@ -851,6 +982,9 @@ func parseInterfaceBlock(block string) RadvdInterface {
 	// Parse route blocks
 	radvdIface.Routes = parseRouteBlocks(block)
 
+	// Parse RDNSS blocks
+	radvdIface.RdnssServers = parseRdnssBlocks(block)
+
 	return radvdIface
 }
 
@@ -1048,6 +1182,96 @@ func parseRouteBlocks(content string) []RadvdRoute {
 	return results
 }
 
+func parseRdnssBlocks(content string) []RadvdRdnss {
+	var results []RadvdRdnss
+	lines := strings.Split(content, "\n")
+
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+
+		// Look for RDNSS declarations
+		if strings.HasPrefix(line, "RDNSS ") {
+			// Extract the server address
+			parts := strings.Fields(line)
+			if len(parts) < 2 {
+				continue
+			}
+
+			serverAddr := parts[1]
+
+			// Check if this is a single-line RDNSS declaration
+			if strings.Contains(line, "{") && strings.Contains(line, "}") {
+				// Parse inline RDNSS options
+				rdnss := RadvdRdnss{
+					Address:  serverAddr,
+					Lifetime: 3600, // Default
+				}
+
+				// Extract options from the same line
+				if strings.Contains(line, "AdvRDNSSLifetime") {
+					if val := extractNumberFromLine(line, "AdvRDNSSLifetime"); val >= 0 {
+						rdnss.Lifetime = val
+					}
+				}
+
+				results = append(results, rdnss)
+				continue
+			}
+
+			// Multi-line RDNSS block
+			braceStart := i
+			if !strings.Contains(line, "{") {
+				// Look for opening brace on next lines
+				for j := i + 1; j < len(lines); j++ {
+					if strings.Contains(lines[j], "{") {
+						braceStart = j
+						break
+					}
+				}
+			}
+
+			// Collect the block content
+			var blockContent strings.Builder
+			braceCount := 0
+
+			for j := braceStart; j < len(lines); j++ {
+				currentLine := lines[j]
+				braceCount += strings.Count(currentLine, "{") - strings.Count(currentLine, "}")
+
+				// Don't include the RDNSS declaration line in the block content
+				if j > i {
+					blockContent.WriteString(currentLine + "\n")
+				}
+
+				// End of RDNSS block
+				if braceCount == 0 && strings.Contains(currentLine, "}") {
+					break
+				}
+			}
+
+			// Parse the RDNSS block
+			rdnss := RadvdRdnss{
+				Address:  serverAddr,
+				Lifetime: 3600, // Default
+			}
+
+			blockLines := strings.Split(blockContent.String(), "\n")
+			for _, blockLine := range blockLines {
+				blockLine = strings.TrimSpace(blockLine)
+				if strings.Contains(blockLine, "AdvRDNSSLifetime") {
+					if val := extractNumber(blockLine); val >= 0 {
+						rdnss.Lifetime = val
+					}
+				}
+			}
+
+			results = append(results, rdnss)
+		}
+	}
+
+	return results
+}
+
 func extractNumberFromLine(line, keyword string) int {
 	// Find the keyword in the line
 	idx := strings.Index(line, keyword)
@@ -1123,6 +1347,7 @@ type RadvdInterface struct {
 	AdvDefaultLifetime int
 	Prefixes           []RadvdPrefix
 	Routes             []RadvdRoute
+	RdnssServers       []RadvdRdnss
 }
 
 type RadvdPrefix struct {
@@ -1136,6 +1361,11 @@ type RadvdRoute struct {
 	Prefix     string
 	Preference string
 	Lifetime   int
+}
+
+type RadvdRdnss struct {
+	Address  string
+	Lifetime int
 }
 
 type NetmapRule struct {
@@ -1161,6 +1391,15 @@ type NetmapMappingWithRadv struct {
 }
 
 type Nat66Rule struct {
+	Interface   string
+	Direction   string // PREROUTING or POSTROUTING
+	Chain       string // The actual iptables chain name
+	Target      string // MASQUERADE, SNAT, DNAT
+	Source      string
+	Destination string
+}
+
+type Nat44Rule struct {
 	Interface   string
 	Direction   string // PREROUTING or POSTROUTING
 	Chain       string // The actual iptables chain name

@@ -44,12 +44,28 @@ func applyNat44Rules(links map[string]*link.Link) error {
 		return err
 	}
 
+	// Debug: Print current rules if not in quiet mode
+	if !QuietMode && len(currentRules) > 0 {
+		fmt.Println("Current NAT44 rules:")
+		for _, rule := range currentRules {
+			fmt.Printf("  - %s\n", rule)
+		}
+	}
+
 	// Generate new rules
 	var newRules []string
 	for linkName, linkObj := range links {
 		if linkObj.Nat44 != nil && linkObj.Nat44.Enabled {
 			rules := generateNat44Rules(linkName, linkObj.Nat44)
 			newRules = append(newRules, rules...)
+		}
+	}
+
+	// Debug: Print new rules if not in quiet mode
+	if !QuietMode && len(newRules) > 0 {
+		fmt.Println("New NAT44 rules to apply:")
+		for _, rule := range newRules {
+			fmt.Printf("  - %s\n", rule)
 		}
 	}
 
@@ -166,7 +182,8 @@ func getCurrentNatRules(iptablesCmd string) ([]string, error) {
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if strings.Contains(line, "MASQUERADE") && strings.HasPrefix(line, "-A ") {
+		// Look for MASQUERADE, SNAT, or DNAT rules
+		if (strings.Contains(line, "MASQUERADE") || strings.Contains(line, "SNAT") || strings.Contains(line, "DNAT")) && strings.HasPrefix(line, "-A ") {
 			// Extract the chain and rule details
 			parts := strings.Fields(line)
 			if len(parts) >= 2 {
@@ -210,28 +227,71 @@ func getCurrentNatRules(iptablesCmd string) ([]string, error) {
 }
 
 func applyRuleChanges(currentRules, newRules []string) error {
-	// Calculate rules to add and remove
-	rulesToAdd := difference(newRules, currentRules)
-	rulesToRemove := difference(currentRules, newRules)
+	// Normalize rules for comparison
+	normalizedCurrent := make([]string, len(currentRules))
+	normalizedNew := make([]string, len(newRules))
+
+	for i, rule := range currentRules {
+		normalizedCurrent[i] = normalizeRule(rule)
+	}
+	for i, rule := range newRules {
+		normalizedNew[i] = normalizeRule(rule)
+	}
+
+	// Calculate rules to add and remove using normalized versions
+	rulesToAdd := difference(normalizedNew, normalizedCurrent)
+	rulesToRemove := difference(normalizedCurrent, normalizedNew)
+
+	// Map back to original rules
+	addMap := make(map[string]string)
+	for i, norm := range normalizedNew {
+		addMap[norm] = newRules[i]
+	}
+	removeMap := make(map[string]string)
+	for i, norm := range normalizedCurrent {
+		removeMap[norm] = currentRules[i]
+	}
 
 	// Remove old rules
-	for _, rule := range rulesToRemove {
-		removeRule := strings.Replace(rule, "-A ", "-D ", 1)
-		if err := executeIptablesRule(removeRule); err != nil {
-			if !QuietMode {
-				fmt.Printf("Warning: failed to remove rule %s: %v\n", removeRule, err)
+	for _, normRule := range rulesToRemove {
+		if origRule, ok := removeMap[normRule]; ok {
+			removeRule := strings.Replace(origRule, "-A ", "-D ", 1)
+			if err := executeIptablesRule(removeRule); err != nil {
+				if !QuietMode {
+					fmt.Printf("Warning: failed to remove rule %s: %v\n", removeRule, err)
+				}
 			}
 		}
 	}
 
 	// Add new rules
-	for _, rule := range rulesToAdd {
-		if err := executeIptablesRule(rule); err != nil {
-			return fmt.Errorf("failed to add rule %s: %v", rule, err)
+	for _, normRule := range rulesToAdd {
+		if origRule, ok := addMap[normRule]; ok {
+			if err := executeIptablesRule(origRule); err != nil {
+				return fmt.Errorf("failed to add rule %s: %v", origRule, err)
+			}
 		}
 	}
 
 	return nil
+}
+
+// normalizeRule normalizes a rule for comparison by removing variations in formatting
+func normalizeRule(rule string) string {
+	// Split and rejoin to normalize whitespace
+	parts := strings.Fields(rule)
+
+	// Normalize common variations
+	for i, part := range parts {
+		// Normalize IP address representations
+		if part == "0.0.0.0/0" || part == "anywhere" {
+			parts[i] = "0.0.0.0/0"
+		} else if part == "::/0" {
+			parts[i] = "::/0"
+		}
+	}
+
+	return strings.Join(parts, " ")
 }
 
 func executeIptablesRule(rule string) error {
