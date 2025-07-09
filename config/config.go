@@ -53,6 +53,7 @@ type RadvConfig struct {
 	Dhcp        bool                  `yaml:"dhcp"`
 	Prefixes    []PrefixConfigCompact `yaml:"prefixes"`
 	Routes      []RouteArray          `yaml:"routes"`
+	RDNSS       []RDNSSConfigCompact  `yaml:"rdnss"`
 	Include     []string              `yaml:"include"`
 }
 
@@ -66,6 +67,11 @@ type PrefixConfigCompact struct {
 
 type RouteArray struct {
 	Route []interface{} `yaml:"route"` // [prefix, preference, lifetime]
+}
+
+type RDNSSConfigCompact struct {
+	Server   []string `yaml:"server"`
+	Lifetime int      `yaml:"lifetime"`
 }
 
 func ParseConfig(configPath string) (*Config, error) {

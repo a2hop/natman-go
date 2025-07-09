@@ -18,6 +18,7 @@ type RadvConfig struct {
 	Prefixes        []PrefixConfig
 	Routes          []RouteConfig
 	AutoRoutes      []RouteConfig // Auto-generated from netmap6
+	RDNSS           []RDNSSConfig // Recursive DNS Server configuration
 	Include         []string
 }
 
@@ -36,6 +37,11 @@ type RouteConfig struct {
 	Preference string
 	Metric     int
 	Lifetime   int
+}
+
+type RDNSSConfig struct {
+	Servers  []string
+	Lifetime int
 }
 
 type Config struct {
@@ -125,6 +131,21 @@ func NewRadvConfig(cfg config.RadvConfig) *RadvConfig {
 		}
 	}
 
+	// Convert RDNSS configuration
+	for _, rdnss := range cfg.RDNSS {
+		rc := RDNSSConfig{
+			Servers:  rdnss.Server,
+			Lifetime: rdnss.Lifetime,
+		}
+
+		// Set default lifetime if not specified
+		if rc.Lifetime == 0 {
+			rc.Lifetime = 300 // 5 minutes default
+		}
+
+		radv.RDNSS = append(radv.RDNSS, rc)
+	}
+
 	return radv
 }
 
@@ -176,6 +197,17 @@ func (r *RadvConfig) GenerateConfig(interfaceName string) string {
 		for _, route := range r.AutoRoutes {
 			config.WriteString(fmt.Sprintf("    route %s { AdvRoutePreference %s; AdvRouteLifetime %d; };\n",
 				route.Prefix, route.Preference, route.Lifetime))
+		}
+	}
+
+	// Add RDNSS entries
+	for _, rdnss := range r.RDNSS {
+		if len(rdnss.Servers) > 0 {
+			config.WriteString("    RDNSS")
+			for _, server := range rdnss.Servers {
+				config.WriteString(fmt.Sprintf(" %s", server))
+			}
+			config.WriteString(fmt.Sprintf(" { AdvRDNSSLifetime %d; };\n", rdnss.Lifetime))
 		}
 	}
 
